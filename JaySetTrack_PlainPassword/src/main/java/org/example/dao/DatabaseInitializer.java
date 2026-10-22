@@ -1,6 +1,5 @@
 package org.example.dao;
 
-
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -23,7 +22,7 @@ public class DatabaseInitializer {
                     Address       TEXT,
                     Role          TEXT NOT NULL CHECK (Role IN ('ADMIN','CUSTOMER','TECHNICIAN')),
                     AccountStatus TEXT NOT NULL DEFAULT 'PENDING'
-                                  CHECK (AccountStatus IN ('PENDING','ACTIVE','INACTIVE'))
+                                  CHECK (AccountStatus IN ('PENDING','APPROVED','INACTIVE'))
                 )""");
 
             st.execute("""
@@ -102,7 +101,7 @@ public class DatabaseInitializer {
             if (rs.next() && rs.getInt(1) > 0) return;
         }
         String sql = "INSERT INTO Users (FullName, Username, PasswordHash, Role, AccountStatus) "
-                   + "VALUES (?, ?, ?, 'ADMIN', 'ACTIVE')";
+                + "VALUES (?, ?, ?, 'ADMIN', 'APPROVED')";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, "System Administrator");
             ps.setString(2, "admin");
