@@ -57,8 +57,7 @@ public class Authentication {
             System.out.println("Username already taken.");
             return;
         }
-        User u = new User(0, fullName, username, password, contact, address, role, "PENDING");
-        if (userDao.register(u)) {
+        if (userDao.register(fullName, username, password, contact, address, role)) {
             System.out.println("Registration successful! Your account is PENDING approval by the administrator.");
         } else {
             System.out.println("Registration failed.");
@@ -70,7 +69,7 @@ public class Authentication {
         System.out.print("Username: "); String username = scanner.nextLine().trim();
         System.out.print("Password: "); String password = scanner.nextLine();
 
-        User user = userDao.findByCredentials(username, password);
+        User user = userDao.login(username, password);
         if (user == null) { System.out.println("Invalid username or password."); return; }
 
         switch (user.getAccountStatus()) {
@@ -81,7 +80,7 @@ public class Authentication {
 
         System.out.println("Welcome, " + user.getFullName() + "!");
         switch (user.getRole()) {
-            case "ADMIN"      -> new AdminMenu(userDao, scanner, user).show();
+            case "ADMIN"      -> new AdminMenu(scanner, userDao, user).show();
             case "CUSTOMER"   -> new CustomerMenu(userDao, scanner, user).show();
             case "TECHNICIAN" -> new TechnicianMenu(userDao, scanner, user).show();
             default           -> System.out.println("Unknown role.");

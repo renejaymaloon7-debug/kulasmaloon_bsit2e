@@ -11,95 +11,131 @@ import java.util.List;
 
 public class UserDao {
 
-    public boolean usernameExists(String username) {
-        String sql = "SELECT 1 FROM Users WHERE Username = ?";
-        try (Connection c = DatabaseConnection.getConnection();
-             PreparedStatement ps = c.prepareStatement(sql)) {
-            ps.setString(1, username);
-            try (ResultSet rs = ps.executeQuery()) { return rs.next(); }
-        } catch (SQLException e) {
-            throw new RuntimeException(e);
-        }
-    }
+    private static final String COLUMNS =
+            "UserID, FullName, Username, PasswordHash, ContactNumber, Address, Role, AccountStatus";
 
-    /** Always saves with PENDING status. */
-    public boolean register(User u) {
+    // ---------- Registration / Login ----------
+
+    public boolean register(String fullName, String username, String password,
+                            String contactNumber, String address, String role) {
         String sql = "INSERT INTO Users (FullName, Username, PasswordHash, ContactNumber, Address, Role, AccountStatus) "
                 + "VALUES (?, ?, ?, ?, ?, ?, 'PENDING')";
-        try (Connection c = DatabaseConnection.getConnection();
-             PreparedStatement ps = c.prepareStatement(sql)) {
-            ps.setString(1, u.getFullName());
-            ps.setString(2, u.getUsername());
-            ps.setString(3, u.getPasswordHash());
-            ps.setString(4, u.getContactNumber());
-            ps.setString(5, u.getAddress());
-            ps.setString(6, u.getRole());
-            return ps.executeUpdate() == 1;
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, fullName);
+            ps.setString(2, username);
+            ps.setString(3, password);
+            ps.setString(4, contactNumber);
+            ps.setString(5, address);
+            ps.setString(6, role.toUpperCase());
+            ps.executeUpdate();
+            return true;
         } catch (SQLException e) {
+            System.out.println("Registration failed: " + e.getMessage());
             return false;
         }
     }
 
-    public User findByCredentials(String username, String passwordHash) {
-        String sql = "SELECT * FROM Users WHERE Username = ? AND PasswordHash = ?";
-        try (Connection c = DatabaseConnection.getConnection();
-             PreparedStatement ps = c.prepareStatement(sql)) {
+    // True if a user with this username already exists
+    public boolean usernameExists(String username) {
+        String sql = "SELECT 1 FROM Users WHERE Username = ?";
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, username);
-            ps.setString(2, passwordHash);
             try (ResultSet rs = ps.executeQuery()) {
-                return rs.next() ? mapRow(rs) : null;
+                return rs.next();
             }
         } catch (SQLException e) {
-            throw new RuntimeException(e);
+            System.out.println("Database error: " + e.getMessage());
+            return false;
         }
     }
 
-    /** All registered accounts, any role, any status. */
+    // Returns the user if username/password match, otherwise null
+    public User login(String username, String password) {
+        String sql = "SELECT " + COLUMNS + " FROM Users WHERE Username = ? AND PasswordHash = ?";
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, username);
+            ps.setString(2, password);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return mapRow(rs);
+                }
+            }
+        } catch (SQLException e) {
+            System.out.println("Database error: " + e.getMessage());
+        }
+        return null;
+    }
+
+    // ---------- Dev 5 ----------
+
+    // All accounts regardless of role
     public List<User> getAllUsers() {
-        String sql = "SELECT * FROM Users ORDER BY UserID";
-        List<User> users = new ArrayList<>();
-        try (Connection c = DatabaseConnection.getConnection();
-             PreparedStatement ps = c.prepareStatement(sql);
-             ResultSet rs = ps.executeQuery()) {
-            while (rs.next()) users.add(mapRow(rs));
-        } catch (SQLException e) {
-            throw new RuntimeException(e);
-        }
-        return users;
+        return query("SELECT " + COLUMNS + " FROM Users ORDER BY UserID");
     }
 
-    /** Accounts of every role whose status is PENDING. */
+    // All accounts with AccountStatus = 'PENDING', across every role
     public List<User> getPendingUsers() {
-        String sql = "SELECT * FROM Users WHERE AccountStatus = ? ORDER BY UserID";
+        return query("SELECT " + COLUMNS + " FROM Users WHERE AccountStatus = 'PENDING' ORDER BY UserID");
+    }
+
+    // PENDING -> APPROVED
+    public boolean approveUser(int userId) {
+        String sql = "UPDATE Users SET AccountStatus = 'APPROVED' WHERE UserID = ?";
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, userId);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            System.out.println("Database error: " + e.getMessage());
+            return false;
+        }
+    }
+
+    // ---------- Dev 7 ----------
+
+    // Update role and status of a user
+    public boolean updateUserRoleAndStatus(int userId, String newRole, String newStatus) {
+        String sql = "UPDATE Users SET Role = ?, AccountStatus = ? WHERE UserID = ?";
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, newRole.toUpperCase());
+            ps.setString(2, newStatus.toUpperCase());
+            ps.setInt(3, userId);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            System.out.println("Database error: " + e.getMessage());
+            return false;
+        }
+    }
+
+    // ---------- Helpers ----------
+
+    private List<User> query(String sql) {
         List<User> users = new ArrayList<>();
-        try (Connection c = DatabaseConnection.getConnection();
-             PreparedStatement ps = c.prepareStatement(sql)) {
-            ps.setString(1, "PENDING");
-            try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) users.add(mapRow(rs));
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                users.add(mapRow(rs));
             }
         } catch (SQLException e) {
-            throw new RuntimeException(e);
+            System.out.println("Database error: " + e.getMessage());
         }
         return users;
-    }
-
-    /** PENDING -> APPROVED. Returns true only if a pending row was updated. */
-    public boolean approveUser(int userId) {
-        String sql = "UPDATE Users SET AccountStatus = 'APPROVED' WHERE UserID = ? AND AccountStatus = 'PENDING'";
-        try (Connection c = DatabaseConnection.getConnection();
-             PreparedStatement ps = c.prepareStatement(sql)) {
-            ps.setInt(1, userId);
-            return ps.executeUpdate() == 1;
-        } catch (SQLException e) {
-            throw new RuntimeException(e);
-        }
     }
 
     private User mapRow(ResultSet rs) throws SQLException {
-        return new User(rs.getInt("UserID"), rs.getString("FullName"),
-                rs.getString("Username"), rs.getString("PasswordHash"),
-                rs.getString("ContactNumber"), rs.getString("Address"),
-                rs.getString("Role"), rs.getString("AccountStatus"));
+        return new User(
+                rs.getInt("UserID"),
+                rs.getString("FullName"),
+                rs.getString("Username"),
+                rs.getString("PasswordHash"),
+                rs.getString("ContactNumber"),
+                rs.getString("Address"),
+                rs.getString("Role"),
+                rs.getString("AccountStatus"));
     }
 }
